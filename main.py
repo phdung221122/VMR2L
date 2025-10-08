@@ -211,6 +211,13 @@ class Agent(nn.Module):
 
         return selected_vm, selected_pm, log_prob, entropy, critic_score, pm_mask
 
+def safe_reshape(tensor, name, target_shape):
+    try:
+        return tensor.cpu().data.numpy().reshape(*target_shape)
+    except Exception as e:
+        print(f"[Warning] Skipped plotting {name}: shape {tensor.shape} not compatible with target {target_shape} ({e})")
+        return None
+
 
 if __name__ == "__main__":
     args = parse_args()
@@ -232,13 +239,13 @@ if __name__ == "__main__":
     else:
         if 'affinity' in args.gym_id:
             run_name = f"NSDI_{args.vm_data_size}{args.max_steps}_{args.gym_id}_{args.affinity}_{args.seed}_{model_name}" \
-                       f"_{utils.name_with_datetime()}"
+                       f"_{utils.name_with_datetime().replace(':', '-')}"
         elif args.num_train != 4000:
             run_name = f"NSDI_{args.vm_data_size}{args.max_steps}_{args.gym_id}_train_{args.num_train}_{args.seed}_{model_name}" \
-                       f"_{utils.name_with_datetime()}"
+                       f"_{utils.name_with_datetime().replace(':', '-')}"
         else:
             run_name = f"NSDI_{args.vm_data_size}{args.max_steps}_{args.gym_id}_{args.seed}_{model_name}" \
-                       f"_{utils.name_with_datetime()}"
+                       f"_{utils.name_with_datetime().replace(':', '-')}"
         if less_feature:
             run_name = run_name + '_less'
     np.set_printoptions(precision=4)
@@ -272,8 +279,8 @@ if __name__ == "__main__":
         params.vm_cov = 14
 
     if args.track:
-        wandb.init(entity="ANONYMOUS",
-                   project="ANONYMOUS",
+        wandb.init(entity= None,
+                   project="VMR2L_test",
                    name=run_name,
                    sync_tensorboard=True,
                    resume='must' if args.restore_id is not None else None,
@@ -460,22 +467,24 @@ if __name__ == "__main__":
         if args.debug and (update + 1) % plot_every_step == 0:
 
             #plot_obs_vm = obs_vm[:, :3].cpu().data.numpy().reshape(num_steps, 3, -1)
-            try:
-                plot_obs_vm = obs_vm[:, :3].cpu().data.numpy().reshape(num_steps, 3, -1)
-            except ValueError:
-                print(
-                    f"[Warning] Skipped plotting: obs_vm shape {obs_vm.shape} not compatible with num_steps={num_steps}")
-                plot_obs_vm = None
+            plot_obs_vm = safe_reshape(obs_vm[:, :3], "obs_vm", (num_steps, 3, -1))
+            plot_obs_pm = safe_reshape(obs_pm[:, :3], "obs_pm", (num_steps, 3, -1))
+            plot_obs_num_steps = safe_reshape(obs_num_steps[:, :3], "obs_num_steps", (num_steps, 3, -1))
+            plot_obs_num_vms = safe_reshape(obs_num_vms[:, :3], "obs_num_vms", (num_steps, 3, 1))
+            plot_vm_actions = safe_reshape(vm_actions[:, :3], "vm_actions", (num_steps, 3, 1))
+            plot_pm_actions = safe_reshape(pm_actions[:, :3], "pm_actions", (num_steps, 3, 1))
+            plot_logprobs = safe_reshape(logprobs[:, :3], "logprobs", (num_steps, 3, 1))
+            plot_rewards = safe_reshape(rewards[:, :3], "rewards", (num_steps, 3, 1))
+            plot_dones = safe_reshape(dones[:, :3], "dones", (num_steps, 3, 1))
+            plot_values = safe_reshape(values[:, :3], "values", (num_steps, 3, 1))
 
-            plot_obs_pm = obs_pm[:, :3].cpu().data.numpy().reshape(num_steps, 3, -1)
-            plot_obs_num_steps = obs_num_steps[:, :3].cpu().data.numpy().reshape(num_steps, 3, -1)
-            plot_obs_num_vms = obs_num_vms[:, :3].cpu().data.numpy().reshape(num_steps, 3, 1)
-            plot_vm_actions = vm_actions[:, :3].cpu().data.numpy().reshape(num_steps, 3, 1)
-            plot_pm_actions = pm_actions[:, :3].cpu().data.numpy().reshape(num_steps, 3, 1)
-            plot_logprobs = logprobs[:, :3].cpu().data.numpy().reshape(num_steps, 3, 1)
-            plot_rewards = rewards[:, :3].cpu().data.numpy().reshape(num_steps, 3, 1)
-            plot_dones = dones[:, :3].cpu().data.numpy().reshape(num_steps, 3, 1)
-            plot_values = values[:, :3].cpu().data.numpy().reshape(num_steps, 3, 1)
+            plot_tensors = [plot_obs_vm, plot_obs_pm, plot_obs_num_steps, plot_obs_num_vms,
+                            plot_vm_actions, plot_pm_actions, plot_logprobs, plot_rewards,
+                            plot_dones, plot_values]
+            if any(x is None for x in plot_tensors):
+                print("[Warning] Skipped plotting due to incompatible tensor shapes.")
+                continue
+
             plot_ep_info = current_ep_info[:, :3]
             plot_update_all = np.swapaxes(np.concatenate([plot_step, plot_obs_vm, plot_obs_pm, plot_obs_num_steps,
                                                           plot_obs_num_vms, plot_vm_actions, plot_pm_actions,
